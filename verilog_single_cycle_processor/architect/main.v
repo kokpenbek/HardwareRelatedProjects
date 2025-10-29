@@ -92,6 +92,7 @@ begin
       RegWrite = 1;
       ALUSrc   = 1;
       ALUControl = 3'b000;
+      immControl = 3'b001;
     end
 
     I_LOAD: begin
@@ -99,12 +100,14 @@ begin
       ALUSrc   = 1;
       MemToReg = 1;
       ALUControl = 3'b000;
+      immControl = 3'b001;
     end
 
     S_TYPE: begin
       MemWrite = 1;
       ALUSrc   = 1;
       ALUControl = 3'b000;
+      immControl = 3'b010; 
     end
 
     B_TYPE: begin
@@ -112,6 +115,7 @@ begin
         BranchBeq = 1;
       else if (funct3 == 3'b100)
         BranchBeq = 1;
+      immControl = 3'b011;
     end
 
     JAL: begin
@@ -189,11 +193,13 @@ module reg_file(
   assign rd2 = (rs2 == 0) ? 0 : regs[rs2];
 endmodule
 
-module mux2_1(input a, b, select,
-                 output reg y);
-  always@(*)
-    if(select==0) y = a;
-    else y = b;
+module mux2_1(
+  input  [31:0] a, 
+  input  [31:0] b, 
+  input  select,
+  output [31:0] y
+);
+  assign y = (select == 0) ? a : b;
 endmodule
 
 module adder32(
@@ -201,4 +207,26 @@ module adder32(
     output [31:0] y
 );
   assign y = a + b;
+endmodule
+
+module and2(input a, b, output y);
+  assign y = a & b;
+endmodule
+
+module or2(input a, b, output y);
+  assign y = a | b;
+endmodule
+
+module pc_reg(
+    input        clk,
+    input        reset,
+    input [31:0] pc_next,
+    output reg [31:0] pc
+);
+  always @(posedge clk or posedge reset) begin
+    if (reset)
+      pc <= 32'h0000_0000;
+    else
+      pc <= pc_next;
+  end
 endmodule
