@@ -1,3 +1,5 @@
+`default_nettype none
+
 // ALU - done
 // Control Unit - done
 // Immediate Decoder - done
@@ -22,6 +24,18 @@ module alu32(
       3'b001: alu_out = srcA - srcB; // 001 - sub
       3'b010: alu_out = srcA & srcB; // 010 - and
       3'b011: alu_out = srcA >> srcB[4:0]; // 011 - srl
+      3'b100: begin // 100 - add_v
+        alu_out = {(srcA[31:24] + srcB[31:24]),
+             (srcA[23:16] + srcB[23:16]),
+             (srcA[15:8]  + srcB[15:8]),
+             (srcA[7:0]   + srcB[7:0])};
+      end
+      3'b101: begin // 101 - avg_v
+        alu_out = {((srcA[31:24] + srcB[31:24]) >> 1),
+             ((srcA[23:16] + srcB[23:16]) >> 1),
+             ((srcA[15:8]  + srcB[15:8])  >> 1),
+             ((srcA[7:0]   + srcB[7:0])   >> 1)};
+      end
       default: alu_out = 0;
     endcase
   end
@@ -230,3 +244,45 @@ module pc_reg(
       pc <= pc_next;
   end
 endmodule
+
+module processor( input         clk, reset,
+                  output [31:0] PC,
+                  input  [31:0] instruction,
+                  output        WE,
+                  output [31:0] address_to_mem,
+                  output [31:0] data_to_mem,
+                  input  [31:0] data_from_mem
+);
+
+wire [6:0]  opcode = instruction[6:0];
+wire [2:0]  funct3 = instruction[14:12];
+wire [6:0]  funct7 = instruction[31:25];
+wire [4:0]  rs1    = instruction[19:15];
+wire [4:0]  rs2    = instruction[24:20];
+wire [4:0]  rd     = instruction[11:7];
+
+wire RegWrite, MemToReg, MemWrite, ALUSrc, ALUControl, immControl, BranchJal, BranchJalr, BranchBeq;
+wire [2:0] ALUControl, immControl;
+
+control_unit cu_res (opcode, funct3, funct7, BranchBeq, BranchJal, BranchJalr, RegWrite, MemToReg, MemWrite, ALUControl, ALUSrc, immControl);
+
+reg [31:0] imm_out;
+
+imm_decode dec_res (instruction, immControl, imm_out);
+
+wire [31:0] rd1, rd2, wd;
+
+reg_file reg_res (clk, RegWrite, rs1, rs2, rd, wd, rd1, rd2);
+
+wire [31:0] SrcA = rd1;
+wire [31:0] SrcB;
+
+mux2_1 srcb_mux (rd2, imm_out, ALUSrc, SrcB);
+
+alu32
+
+
+endmodule
+
+//... add new modules here ...
+`default_nettype wire
