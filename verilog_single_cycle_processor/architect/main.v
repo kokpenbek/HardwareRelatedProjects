@@ -15,8 +15,9 @@ module alu32(
     input [31:0] srcA, srcB,
     input [2:0] alu_control,
     output reg [31:0] alu_out,
-    output alu_compare,
-    output alu_zero);
+    output reg alu_zero,
+    output reg alu_less
+);
 
   always @(*) begin //nastava zmena hodnot
     case (alu_control)
@@ -36,13 +37,15 @@ module alu32(
              ((srcA[15:8]  + srcB[15:8])  >> 1),
              ((srcA[7:0]   + srcB[7:0])   >> 1)};
       end
+      3'b110: begin
+         alu_out = 0; // blt
+      end
       default: alu_out = 0;
     endcase
+  alu_zero = (alu_out == 0);
+  alu_less = ($signed(srcA) < $signed(srcB));
+
   end
-
-  assign alu_compare = (srcA == srcB);
-  assign alu_zero = (alu_out == 0);
-
 endmodule
 
 // opcode - 7-bit opcode from instruction
@@ -65,14 +68,13 @@ module control_unit(
 
 // block defines opcodes (more readable xd)
 localparam R_TYPE   = 7'b0110011;
-localparam I_TYPE   = 7'b0010011;
-localparam I_LOAD   = 7'b0000011;
-localparam S_TYPE   = 7'b0100011;
-localparam B_TYPE   = 7'b1100011;  
+localparam addi_instr   = 7'b0010011;
+localparam lw_instr   = 7'b0000011;
+localparam sw_instr   = 7'b0100011;
+localparam beq_blt_instr   = 7'b1100011;  
 localparam JAL      = 7'b1101111;
 localparam JALR     = 7'b1100111;
 localparam ADD_V    = 7'b0001011;
-localparam AVG_V    = 7'b0001011;
 
 always @(*) 
 begin
@@ -102,14 +104,14 @@ begin
         ALUControl = 3'b011; // srl
     end
 
-    I_TYPE: begin
+    addi_instr: begin
       RegWrite = 1;
       ALUSrc   = 1;
       ALUControl = 3'b000;
       immControl = 3'b001;
     end
 
-    I_LOAD: begin
+    lw_instr: begin
       RegWrite = 1;
       ALUSrc   = 1;
       MemToReg = 1;
@@ -117,24 +119,27 @@ begin
       immControl = 3'b001;
     end
 
-    S_TYPE: begin
+    sw_instr: begin
       MemWrite = 1;
       ALUSrc   = 1;
       ALUControl = 3'b000;
       immControl = 3'b010; 
     end
 
-    B_TYPE: begin
-      if (funct3 == 3'b000)
+    beq_blt_instr: begin
+      if (funct3 == 3'b000) // beq
         BranchBeq = 1;
-      else if (funct3 == 3'b100)
-        BranchBeq = 1;
+      else if (funct3 == 3'b100) //blt
+        BranchBeq = 0;
+        ALUControl = 3'b110; // set less than
       immControl = 3'b011;
+      ALUSrc = 1;
     end
 
     JAL: begin
       RegWrite  = 1;
       BranchJal = 1;
+      ALUSrc = 1;
       immControl = 3'b101;
     end
 
@@ -192,19 +197,20 @@ endmodule
 
 module reg_file(
     input clk,
-    input is_signal,
-    input [4:0] rs1, rs2, res,
+    input regWrite,
+    input [4:0] rs1, rs2, addressWrite,
     input [31:0] wd,
-    output [31:0] rd1, rd2);
+    output reg [31:0] rd1, rd2);
 
   reg [31:0] regs [31:0];
 
-  always @(posedge clk)
-    if (is_signal && (res != 0))
-      regs[res] <= wd;
+  always @(posedge clk) begin
+    if (regWrite && (addressWrite != 0))
+      regs[addressWrite] <= wd;
 
-  assign rd1 = (rs1 == 0) ? 0 : regs[rs1];
-  assign rd2 = (rs2 == 0) ? 0 : regs[rs2];
+   rd1 = (rs1 == 0) ? 0 : regs[rs1];
+   rd2 = (rs2 == 0) ? 0 : regs[rs2];
+  end
 endmodule
 
 module mux2_1(
@@ -216,32 +222,47 @@ module mux2_1(
   assign y = (select == 0) ? a : b;
 endmodule
 
-module adder32(
-    input  [31:0] a, b,
-    output [31:0] y
-);
-  assign y = a + b;
-endmodule
-
-module and2(input a, b, output y);
-  assign y = a & b;
-endmodule
-
-module or2(input a, b, output y);
-  assign y = a | b;
-endmodule
-
 module pc_reg(
     input        clk,
     input        reset,
-    input [31:0] pc_next,
+    input [31:0] out,
     output reg [31:0] pc
 );
   always @(posedge clk or posedge reset) begin
     if (reset)
-      pc <= 32'h0000_0000;
+      pc <= 32'b0;
     else
-      pc <= pc_next;
+      pc <= out;
+  end
+endmodule
+
+module add_operation(
+    input  [31:0] a,
+    input  [31:0] b,
+    output reg [31:0] y
+);
+
+always @(*) begin
+    y = a + b;
+end
+
+endmodule
+
+module and2(input a, b, output reg y);
+  always @(*) begin
+    y = a & b;
+  end
+endmodule
+
+module or2(input a, b, output reg y);
+  always @(*) begin
+    y = a | b;
+  end
+endmodule
+
+module or3(input a, b, c, output reg y);
+  always @(*) begin
+    y = a | b | c;
   end
 endmodule
 
@@ -259,27 +280,68 @@ wire [2:0]  funct3 = instruction[14:12];
 wire [6:0]  funct7 = instruction[31:25];
 wire [4:0]  rs1    = instruction[19:15];
 wire [4:0]  rs2    = instruction[24:20];
-wire [4:0]  rd     = instruction[11:7];
+wire [4:0]  addressWrite     = instruction[11:7];
 
-wire RegWrite, MemToReg, MemWrite, ALUSrc, ALUControl, immControl, BranchJal, BranchJalr, BranchBeq;
+wire RegWrite, MemToReg, MemWrite, ALUSrc, BranchJal, BranchJalr, BranchBeq;
 wire [2:0] ALUControl, immControl;
 
 control_unit cu_res (opcode, funct3, funct7, BranchBeq, BranchJal, BranchJalr, RegWrite, MemToReg, MemWrite, ALUControl, ALUSrc, immControl);
 
-reg [31:0] imm_out;
+wire [31:0] imm_out;
 
 imm_decode dec_res (instruction, immControl, imm_out);
 
-wire [31:0] rd1, rd2, wd;
+wire [31:0] rd1, rd2, writeData;
 
-reg_file reg_res (clk, RegWrite, rs1, rs2, rd, wd, rd1, rd2);
+reg_file reg_res (clk, RegWrite, rs1, rs2, addressWrite, writeData, rd1, rd2);
 
 wire [31:0] SrcA = rd1;
 wire [31:0] SrcB;
 
 mux2_1 srcb_mux (rd2, imm_out, ALUSrc, SrcB);
 
-alu32
+wire alu_zero, alu_less;
+wire [31:0] ALUOut;
+
+alu32 alu_res (SrcA, SrcB, ALUControl, ALUOut, alu_zero, alu_less);
+
+//mux2_1 memtoreg_mux (ALUOut, data_from_mem, MemToReg, writeData);
+assign WE             = MemWrite;
+assign address_to_mem = ALUOut; 
+assign data_to_mem    = rd2;
+
+wire [31:0] PCplus4;
+wire BranchJalrx;
+wire [31:0] jalr_target;
+wire [31:0] regWriteData;
+
+mux2_1 regWriteMux1 (ALUOut, PCplus4, BranchJalrx, jalr_target);
+mux2_1 regWriteMux2 (jalr_target, data_from_mem, MemToReg, regWriteData);
+assign writeData = regWriteData;
+
+wire [31:0] branchAdderOutput;
+add_operation branchAdder (imm_out, PCplus4, branchAdderOutput);
+
+wire[31:0] branchTargetOutput;
+mux2_1 branchTarget_mux (branchAdderOutput, ALUOut, BranchJalr, branchTargetOutput);
+
+add_operation pcPlus4Adder (PC, 32'd4, PCplus4);
+
+wire BranchOutcome;
+wire[31:0] Pc_n;
+mux2_1 leftestMux (PCplus4, branchTargetOutput, BranchOutcome, Pc_n);
+
+pc_reg pc_register (clk, reset, Pc_n, PC);
+
+or2 branchOrJalr (BranchJal, BranchJalr, BranchJalrx);
+
+wire branchBeqAndZeroResult;
+and2 branchAndZero (BranchBeq, alu_zero, branchBeqAndZeroResult);
+wire branchBLTandLessResult;
+and2 branchBltAndLess (BranchBLT, alu_less, branchBLTandLessResult);
+
+wire branchBLT;
+or3 branchOutcomeOrJal (branchBeqAndZeroResult, BranchJalrx, branchBLTandLessResult, BranchOutcome);
 
 
 endmodule
