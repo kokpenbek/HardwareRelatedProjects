@@ -5,6 +5,9 @@
 // Immediate Decoder - done
 // Multiplexer - done
 // Reg_file - done
+// PC Register - done
+// small operations - done
+// processor - done(?s)
 
 // srcA and srcB are the two 32-bit inputs to the ALU
 // alu_control is a 3-bit control signal that determines the operation to be performed
@@ -64,7 +67,9 @@ module control_unit(
     output reg       MemWrite,
     output reg [2:0] ALUControl,
     output reg       ALUSrc,
-    output reg [2:0] immControl);
+    output reg [2:0] immControl,
+    output reg      BranchBLT
+    );
 
 // block defines opcodes (more readable xd)
 localparam R_TYPE   = 7'b0110011;
@@ -87,6 +92,7 @@ begin
   ALUControl  = 3'b000;
   ALUSrc      = 0;
   immControl  = 3'b000;
+  BranchBLT   = 0;
 
   case (opcode)
     R_TYPE: begin
@@ -131,6 +137,7 @@ begin
         BranchBeq = 1;
       else if (funct3 == 3'b100) //blt
         BranchBeq = 0;
+        BranchBLT = 1;
         ALUControl = 3'b110; // set less than
       immControl = 3'b011;
       ALUSrc = 1;
@@ -169,6 +176,7 @@ begin
       ALUSrc     = 0;
       ALUControl = 3'b000;
       immControl = 3'b000;
+      BranchBLT  = 0;
     end
 
   endcase
@@ -285,7 +293,7 @@ wire [4:0]  addressWrite     = instruction[11:7];
 wire RegWrite, MemToReg, MemWrite, ALUSrc, BranchJal, BranchJalr, BranchBeq;
 wire [2:0] ALUControl, immControl;
 
-control_unit cu_res (opcode, funct3, funct7, BranchBeq, BranchJal, BranchJalr, RegWrite, MemToReg, MemWrite, ALUControl, ALUSrc, immControl);
+control_unit cu_res (opcode, funct3, funct7, BranchBeq, BranchJal, BranchJalr, RegWrite, MemToReg, MemWrite, ALUControl, ALUSrc, immControl, branchBLT);
 
 wire [31:0] imm_out;
 
@@ -305,7 +313,6 @@ wire [31:0] ALUOut;
 
 alu32 alu_res (SrcA, SrcB, ALUControl, ALUOut, alu_zero, alu_less);
 
-//mux2_1 memtoreg_mux (ALUOut, data_from_mem, MemToReg, writeData);
 assign WE             = MemWrite;
 assign address_to_mem = ALUOut; 
 assign data_to_mem    = rd2;
@@ -338,7 +345,7 @@ or2 branchOrJalr (BranchJal, BranchJalr, BranchJalrx);
 wire branchBeqAndZeroResult;
 and2 branchAndZero (BranchBeq, alu_zero, branchBeqAndZeroResult);
 wire branchBLTandLessResult;
-and2 branchBltAndLess (BranchBLT, alu_less, branchBLTandLessResult);
+and2 branchBltAndLess (branchBLT, alu_less, branchBLTandLessResult);
 
 wire branchBLT;
 or3 branchOutcomeOrJal (branchBeqAndZeroResult, BranchJalrx, branchBLTandLessResult, BranchOutcome);
