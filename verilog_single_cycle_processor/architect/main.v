@@ -248,33 +248,21 @@ endmodule
 module add_operation(
     input  [31:0] a,
     input  [31:0] b,
-    output reg [31:0] y
+    output [31:0] y
 );
-
-always @(*) begin
-    y = a + b;
-end
-
+    assign y = a + b;
 endmodule
 
-module and2(input a, b, output reg y);
-  always @(*) begin
-    y = a & b;
-  end
+module and2(input a, b, output y);
+    assign y = a & b;
 endmodule
 
-
-module or2(input a, b, output reg y);
-  always @(*) begin
-    y = a | b;
-  end
+module or2(input a, b, output y);
+    assign y = a | b;
 endmodule
 
-
-module or3(input a, b, c, output reg y);
-  always @(*) begin
-    y = a | b | c;
-  end
+module or3(input a, b, c, output y);
+    assign y = a | b | c;
 endmodule
 
 module processor( input         clk, reset,
